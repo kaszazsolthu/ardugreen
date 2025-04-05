@@ -5,8 +5,9 @@
 #include <SPI.h>
 #include <SD.h>
 #include <EEPROM.h>
+#include <avr/wdt.h>
 
-#define DEBUG_MODE true
+#define DEBUG_MODE !true
 
 // Pin definitions
 #define NTC_PIN A1
@@ -48,13 +49,19 @@ int err = 0; // error code on booting
 void setup() {
   // EEPROM reset - CSAK EGYSZER VÉGREHAJTANI! / ONLY ONCE RUN!
   //for(int i = 0; i < 1023; i++) EEPROM.write(i, 0);
+
+  // watchdog disable first!
+  wdt_disable();
   
   // soros konzol bekapcsolása
-  Serial.begin(9600);
+  if(DEBUG_MODE) {
+    delay(100);
+    Serial.begin(9600);
+  }
 
   // hő és pára mérő
   if (!aht.begin(&Wire, 0, 0x38)) {
-    if(DEBUG_MODE) Serial.println("Could not find AHT on 0x38? Check wiring");
+    if(Serial) Serial.println("Could not find AHT on 0x38? Check wiring");
     err = 1;
   }
 
@@ -74,7 +81,7 @@ void setup() {
   lcd.init();
   lcd.backlight();
   lcd.setCursor(0, 0);
-  lcd.print("Start...");
+  lcd.print("Start ArduGreen");
 
   // potméter miatt kellhet
   analogReference(DEFAULT);
@@ -85,7 +92,7 @@ void setup() {
 
   // SD kártya, 10-es pin a chip select
   if (!SD.begin(SD_CHIPS_SELECT)) {
-    if(DEBUG_MODE) Serial.println("Sd kartya hiba!");
+    if(Serial) Serial.println("Sd kartya hiba!");
     err = 2;
   }
 
@@ -371,7 +378,7 @@ int getNum(int x, int old_act, int minV, int maxV) {
 
 
 void saveData(int n, int val) {
-  if(DEBUG_MODE) {
+  if(Serial) {
     Serial.print("saveData n: "); Serial.print(n); Serial.print(", val: "); Serial.println(val);
   }
   EEPROM.update(n, val & 0xff); // write helyett update, ha nem módosult, ne írjuk fölöslegesen
@@ -767,9 +774,17 @@ void ventCheck(int h, int m) { // szellőztetés D3
 
 
 void loop() {
+  wdt_enable(WDTO_8S);   // 8 másodperces watchdog
+  wdt_reset();           // reseteljük, hogy ne lépjen életbe
+
   baseLoop();
   if(getKey() == 4) {
+
+    wdt_disable();  // kikapcsoljuk a watchdogot, amíg a menü aktív
     mainMenu();
+    wdt_enable(WDTO_8S);  // újra engedélyezzük
+    wdt_reset();          // reseteljük az időzítőt
+
     lcd.clear();
     old_temper = -1;
     old_hum = -1;
